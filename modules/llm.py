@@ -39,11 +39,18 @@ def get_travel_recommendation(date):
 5. 실제 행사 일정이 확실하지 않은 경우 "일정 변동 가능"이라는 표현을 포함하세요.
 6. weather는 해당 시기의 일반적인 날씨를 요약하세요.
 7. reason은 추천 근거를 2~4문장으로 작성하세요.
+8. 추천 지역은 여행하기 좋은 국내 도시 2~3곳을 추천하세요.
+
+추천 지역은 서로 다른 도시여야 합니다.
 
 반드시 다음 JSON 구조를 지켜주세요.
 
 {{
-    "recommended_city": "도시 이름",
+    "recommended_cities": [
+    "도시 이름 1",
+    "도시 이름 2",
+    "도시 이름 3"
+    ],
     "weather": "해당 시기의 일반적인 날씨 요약",
     "events": [
         "행사 또는 축제 후보 1",
@@ -70,7 +77,7 @@ def get_travel_recommendation(date):
         data = json.loads(text)
 
         required_keys = [
-            "recommended_city",
+            "recommended_cities",
             "weather",
             "events",
             "reason"
@@ -82,8 +89,15 @@ def get_travel_recommendation(date):
                     f"필수 키가 없습니다: {key}"
                 )
 
-        if not isinstance(data["recommended_city"], str):
-            raise ValueError("recommended_city는 문자열이어야 합니다.")
+        if not isinstance(data["recommended_cities"], list):
+            raise ValueError(
+                "recommended_cities는 배열이어야 합니다."
+    )
+
+        if not 2 <= len(data["recommended_cities"]) <= 3:
+            raise ValueError(
+                "recommended_cities는 2~3개여야 합니다."
+    )
 
         if not isinstance(data["weather"], str):
             raise ValueError("weather는 문자열이어야 합니다.")

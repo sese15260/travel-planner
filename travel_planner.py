@@ -4,6 +4,7 @@ import os
 
 from datetime import datetime
 
+from modules.cache import load_cache, save_cache
 from modules.llm import get_travel_recommendation
 from modules.places import search_restaurants
 from modules.report import generate_report
@@ -44,86 +45,170 @@ errors = []
 
 
 # ----------------------------------------
-# [1/3] Gemini 여행 지역 추천
+# 기존 캐시 확인
 # ----------------------------------------
 
-print()
-print("[1/3] 여행 지역 추천 생성 중 (Gemini)...")
+cached_data = load_cache(args.date)
 
 
-try:
-    recommendation = get_travel_recommendation(args.date)
+if cached_data:
+    print()
+    print("기존 결과 데이터를 발견했습니다.")
+    print("Gemini 및 Kakao API 호출을 건너뜁니다.")
 
-    print(
-        f"  - 추천 지역: "
-        f"{recommendation['recommended_city']}"
+    recommendation = cached_data.get(
+        "recommendation",
+        {}
     )
 
-    print(
-        f"  - 날씨: "
-        f"{recommendation['weather']}"
+    restaurants_by_city = cached_data.get(
+        "restaurants_by_city",
+        {}
     )
 
-    print(
-        f"  - 행사/축제: "
-        f"{len(recommendation['events'])}개"
+    errors = cached_data.get(
+        "errors",
+        []
     )
 
-except Exception as e:
-    print(f"  - 오류: {e}")
+else:
 
-    errors.append({
-        "step": "travel_recommendation",
-        "type": "API_ERROR",
-        "message": str(e)
-    })
+    # ----------------------------------------
+    # [1/3] Gemini 여행 지역 추천
+    # ----------------------------------------
 
-    print("프로그램을 종료합니다.")
-    exit(1)
+    print()
+    print("[1/3] 여행 지역 추천 생성 중 (Gemini)...")
 
-
-# ----------------------------------------
-# [2/3] Kakao 맛집 검색
-# ----------------------------------------
-
-print()
-print("[2/3] 맛집 검색 중 (Kakao Local)...")
-
-
-try:
-    restaurants = search_restaurants(
-        recommendation["recommended_city"],
-        limit=5
-    )
-
-    if restaurants:
-        print(
-            f"  - 맛집 {len(restaurants)}곳 검색 완료"
+    try:
+        recommendation = get_travel_recommendation(
+            args.date
         )
 
-        for i, restaurant in enumerate(
-            restaurants,
-            start=1
-        ):
-            print(
-                f"  {i}. {restaurant['name']} "
-                f"- {restaurant['address']}"
+        print(
+            f"  - 추천 지역: "
+            f"{recommendation['recommended_cities']}"
+        )
+
+        print(
+            f"  - 날씨: "
+            f"{recommendation['weather']}"
+        )
+
+        print(
+            f"  - 행사/축제: "
+            f"{len(recommendation['events'])}개"
+        )
+
+    except Exception as e:
+
+        print(f"  - 오류: {e}")
+
+        errors.append({
+            "step": "travel_recommendation",
+            "type": "API_ERROR",
+            "message": str(e)
+        })
+
+        print("프로그램을 종료합니다.")
+        exit(1)
+
+
+    # ----------------------------------------
+    # [2/3] Kakao 맛집 검색
+    # ----------------------------------------
+
+    print()
+    print(
+        "[2/3] 지역별 맛집 검색 중 "
+        "(Kakao Local)..."
+    )
+
+    restaurants_by_city = {}
+
+
+    for city in recommendation["recommended_cities"]:
+
+        print()
+        print(f"  [{city}] 맛집 검색 중...")
+
+        try:
+            restaurants = search_restaurants(
+                city,
+                limit=5
             )
 
-    else:
-        print("  - 검색 결과 0건")
+            restaurants_by_city[city] = restaurants
 
-except Exception as e:
-    print(f"  - 맛집 검색 오류: {e}")
-    print("  - 맛집 섹션은 '데이터 없음'으로 처리합니다.")
+            if restaurants:
 
-    errors.append({
-        "step": "place_search",
-        "type": "API_ERROR",
-        "message": str(e)
-    })
+                print(
+                    f"  - {city}: "
+                    f"{len(restaurants)}곳 검색 완료"
+                )
 
-    restaurants = []
+                for i, restaurant in enumerate(
+                    restaurants,
+                    start=1
+                ):
+                    print(
+                        f"    {i}. "
+                        f"{restaurant['name']}"
+                    )
+
+            else:
+
+                print(
+                    f"  - {city}: "
+                    f"검색 결과 0건"
+                )
+
+                errors.append({
+                    "step": "place_search",
+                    "type": "EMPTY_RESULT",
+                    "city": city,
+                    "message": (
+                        f"{city} 맛집 검색 결과 0건"
+                    )
+                })
+
+        except Exception as e:
+
+            print(
+                f"  - {city}: "
+                f"맛집 검색 오류: {e}"
+            )
+
+            print(
+                "  - 해당 지역은 "
+                "'데이터 없음'으로 처리합니다."
+            )
+
+            errors.append({
+                "step": "place_search",
+                "type": "API_ERROR",
+                "city": city,
+                "message": str(e)
+            })
+
+            restaurants_by_city[city] = []
+
+
+    # ----------------------------------------
+    # 원본 데이터 저장
+    # ----------------------------------------
+
+    result_data = {
+        "date": args.date,
+        "recommendation": recommendation,
+        "restaurants_by_city": restaurants_by_city,
+        "errors": errors
+    }
+
+    save_cache(
+        args.date,
+        result_data
+    )
 
 
 # ----------------------------------------
@@ -131,20 +216,27 @@ except Exception as e:
 # ----------------------------------------
 
 print()
-print("[3/3] 최종 여행 리포트 생성 중 (Gemini)...")
+print(
+    "[3/3] 최종 여행 리포트 생성 중 "
+    "(Gemini)..."
+)
 
 
 try:
+
     report = generate_report(
         recommendation,
-        restaurants,
+        restaurants_by_city,
         errors
     )
 
     print("  - 리포트 생성 완료")
 
 except Exception as e:
-    print(f"  - 리포트 생성 오류: {e}")
+
+    print(
+        f"  - 리포트 생성 오류: {e}"
+    )
 
     errors.append({
         "step": "report_generation",
@@ -159,7 +251,10 @@ except Exception as e:
 # 결과 저장
 # ----------------------------------------
 
-os.makedirs("results", exist_ok=True)
+os.makedirs(
+    "results",
+    exist_ok=True
+)
 
 
 json_path = os.path.join(
@@ -167,16 +262,18 @@ json_path = os.path.join(
     f"{args.date}_travel_data.json"
 )
 
+
 md_path = os.path.join(
     "results",
     f"{args.date}_travel_plan.md"
 )
 
 
+# 최신 오류 정보까지 반영
 result_data = {
     "date": args.date,
     "recommendation": recommendation,
-    "restaurants": restaurants,
+    "restaurants_by_city": restaurants_by_city,
     "errors": errors
 }
 
@@ -215,5 +312,10 @@ if report:
 else:
 
     print()
-    print("여행 리포트가 생성되지 않았습니다.")
-    print(f"원본 데이터: {json_path}")
+    print(
+        "여행 리포트가 생성되지 않았습니다."
+    )
+
+    print(
+        f"원본 데이터: {json_path}"
+    )

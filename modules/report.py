@@ -19,7 +19,11 @@ def get_gemini_client():
     return genai.Client(api_key=api_key)
 
 
-def generate_report(recommendation, restaurants, errors):
+def generate_report(
+    recommendation,
+    restaurants_by_city,
+    errors
+):
     client = get_gemini_client()
 
     prompt = f"""
@@ -30,8 +34,8 @@ def generate_report(recommendation, restaurants, errors):
 [여행 추천 정보]
 {json.dumps(recommendation, ensure_ascii=False, indent=2)}
 
-[맛집 정보]
-{json.dumps(restaurants, ensure_ascii=False, indent=2)}
+[지역별 맛집 정보]
+{json.dumps(restaurants_by_city, ensure_ascii=False, indent=2)}
 
 [오류 정보]
 {json.dumps(errors, ensure_ascii=False, indent=2)}
@@ -53,8 +57,29 @@ def generate_report(recommendation, restaurants, errors):
 행사 또는 축제 목록을 작성하세요.
 
 ## 맛집 추천
-맛집을 번호가 있는 목록으로 작성하세요.
-맛집 데이터가 없다면 반드시 "데이터 없음"이라고 작성하세요.
+맛집은 지역별로 구분해서 작성하세요.
+
+각 추천 지역마다 해당 지역의 맛집을 별도로 표시하세요.
+
+예:
+
+## 맛집 추천
+
+### 안동
+1. 맛집 A
+2. 맛집 B
+
+### 진주
+1. 맛집 C
+2. 맛집 D
+
+### 정선
+1. 맛집 E
+2. 맛집 F
+
+특정 지역의 맛집 데이터가 없다면 해당 지역에 "데이터 없음"이라고 표시하세요.
+
+제공된 맛집 데이터에 없는 식당을 새로 만들어내지 마세요.
 
 ## 1일 일정 제안
 오전 / 오후 / 저녁으로 나누어 여행 일정을 제안하세요.
